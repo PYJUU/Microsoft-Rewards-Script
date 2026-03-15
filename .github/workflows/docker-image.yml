@@ -1,0 +1,105 @@
+name: Release and Push Docker Image
+
+on:
+  push:
+    branches: [v3]
+    paths:
+      - package.json
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  IMAGE_NAME: pyjuu/microsoft-rewards-script-chinese
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read current version from package.json
+        id: version
+        run: |
+          set -euo pipefail
+          CUR_VERSION="$(node -p "require('./package.json').version")"
+          echo "current=$CUR_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Current version: $CUR_VERSION"
+
+      - name: Check if GitHub Release already exists
+        id: relcheck
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="v${{ steps.version.outputs.current }}"
+
+          if gh api "repos/${{ github.repository }}/releases/tags/$TAG" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release already exists: $TAG"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Release does not exist: $TAG"
+          fi
+
+      - name: Create GitHub Release
+        if: steps.relcheck.outputs.exists != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.current }}
+          name: v${{ steps.version.outputs.current }}
+          generate_release_notes: true
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Check if Docker image tag already exists
+        id: imgcheck
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.IMAGE_NAME }}"
+          TAG="${{ steps.version.outputs.current }}"
+          REF="$IMAGE:$TAG"
+
+          if docker manifest inspect "$REF" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Docker image already exists: $REF"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Docker image does not exist: $REF"
+          fi
+
+      - name: Stop if Docker image already exists
+        if: steps.imgcheck.outputs.exists == 'true'
+        run: |
+          echo "Docker image already exists for version ${{ steps.version.outputs.current }}, skipping."
+          exit 0
+
+      - name: Set up QEMU
+        if: steps.imgcheck.outputs.exists != 'true'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        if: steps.imgcheck.outputs.exists != 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        if: steps.imgcheck.outputs.exists != 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ steps.version.outputs.current }}
+            ${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
