@@ -202,7 +202,7 @@ export class QueryCore {
 
         try {
             const request: AxiosRequestConfig = {
-                url: 'https://trends.google.com/_/TrendsUi/data/batchexecute',
+                url: 'https://trends.pyju.fun/_/TrendsUi/data/batchexecute',
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
