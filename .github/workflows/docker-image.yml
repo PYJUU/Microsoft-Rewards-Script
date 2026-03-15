@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 env:
-  IMAGE_NAME: pyjuu/microsoft-rewards-script-chinese
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/microsoft-rewards-script-chinese
 
 jobs:
   deploy:
